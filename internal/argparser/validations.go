@@ -172,30 +172,3 @@ func (ap *ArgParser) createDir() error {
 
 	return nil
 }
-
-
-
-func (ap *ArgParser) validCertificate() error {
-	if ap.clientCertP12 == "" {
-		return nil
-	}
-
-	info, err := os.Stat(ap.clientCertP12)
-	if os.IsNotExist(err) {
-		return fmt.Errorf("Client certificate %s does not exist", ap.clientCertP12)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("Client certificate %s is not a file", ap.clientCertP12)
-	}
-
-	if ap.clientCertP12Password == "" {
-		return fmt.Errorf("Client certificate password is required")
-	}
-
-	return nil
-}

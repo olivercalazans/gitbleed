@@ -30,8 +30,6 @@ type ArgParser struct {
 	urlList               []string
 	directory             string
 	proxy                 string
-	clientCertP12         string
-	clientCertP12Password string
 	delay                 float64
 	jobs                  int
 	retry                 int
@@ -62,19 +60,17 @@ func (ap *ArgParser) GetArgs() (*Arguments, error) {
 	}
 
 	args := &Arguments{
-		ClientCertP12Password : ap.clientCertP12Password,
-		ClientCertP12         : ap.clientCertP12,
-		Directory			  : ap.directory,
-		Proxy                 : ap.proxy,
-		URL			          : ap.url,
-		Jobs			      : ap.jobs,
-		Retry			      : ap.retry,
-		Timeout			      : ap.timeout,
-		HTTPHeaders           : headers,
-		Branches			  : ap.branches,
-		Delay			      : ap.delay,
-		URLList               : ap.urlList,
-		OnlyCheck             : ap.onlyCheck,
+		Directory   : ap.directory,
+		Proxy       : ap.proxy,
+		URL	        : ap.url,
+		Jobs        : ap.jobs,
+		Retry       : ap.retry,
+		Timeout	    : ap.timeout,
+		HTTPHeaders : headers,
+		Branches    : ap.branches,
+		Delay	    : ap.delay,
+		URLList     : ap.urlList,
+		OnlyCheck   : ap.onlyCheck,
 	}
 
 	return args, nil
@@ -112,10 +108,6 @@ func (ap *ArgParser) parse() error {
 	}
 
 	if err := ap.validProxy(); err != nil {
-		return err
-	}
-
-	if err := ap.validCertificate(); err != nil {
 		return err
 	}
 

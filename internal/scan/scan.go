@@ -27,22 +27,26 @@ import (
 
 
 func Scan(args *argparser.Arguments) {
-	ctx := context.Background()
 	client := workers.NewClient(args)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(args.Jobs)
 
 	for _, url := range args.URLList {
-		resp, err := client.Get(ctx, url+"/.git/HEAD", true)
-		
-		if err != nil {
-			display.Warning(err.Error())
-			continue
-		}
+		url := url
 
-		display.Response(resp)
+		g.Go(func() error {
+			resp, err := client.Get(ctx, url+"/.git/HEAD", false)
+			if err != nil {
+				display.Warning(err.Error())
+				return nil
+			}
+			defer resp.Body.Close()
 
-		resp.Body.Close()
+			display.Response(resp)
+			return nil
+		})
 	}
+
+	g.Wait()
 }
