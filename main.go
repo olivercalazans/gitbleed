@@ -15,11 +15,10 @@
 package main
 
 import (
-	"context"
-
 	"gitbleed/internal/argparser"
 	"gitbleed/internal/display"
 	"gitbleed/internal/extractor"
+	"gitbleed/internal/scan"
 )
 
 
@@ -30,8 +29,13 @@ func main() {
 		display.Fatal(err)
 	}
 
+	if args.OnlyCheck {
+		scan.Scan(args)
+		return
+	}
+
 	g := extractor.New(args)
-	if err := g.Execute(context.Background()); err != nil {
+	if err := g.Execute(); err != nil {
 		display.Fatal(err)
 	}
 }

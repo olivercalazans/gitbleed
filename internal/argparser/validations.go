@@ -16,6 +16,7 @@ package argparser
 
 import (
 	"fmt"
+	"gitbleed/internal/fsutils"
 	"os"
 	"regexp"
 	"strings"
@@ -24,6 +25,10 @@ import (
 
 
 func (ap *ArgParser) validURL() error {
+	if ap.filePath != "" {
+		return nil
+	}
+	
 	if ap.url == "" {
 		return fmt.Errorf("--url is required")
 	}
@@ -123,7 +128,29 @@ func (ap *ArgParser) validProxy() error {
 
 
 
+func (ap *ArgParser) validFilePath() error {
+	if ap.filePath == "" {
+		return nil
+	}
+
+	urls, err := fsutils.ReadLines(ap.filePath)
+	
+	if err != nil {
+		return err
+	}
+
+	ap.urlList = urls
+
+	return nil
+}
+
+
+
 func (ap *ArgParser) createDir() error {
+	if ap.filePath != "" {
+		return nil
+	}
+
 	if ap.directory == "" {
 		return fmt.Errorf("-o/--out is required")
 	}

@@ -29,12 +29,14 @@ type Arguments struct {
 	Directory             string
 	Proxy                 string
 	URL                   string
+	URLList               []string
 	Jobs                  int
 	Retry                 int
 	Timeout               int
 	HTTPHeaders           map[string]string
 	Branches              []string
 	Delay                 float64
+	OnlyCheck             bool
 }
 
 
@@ -71,4 +73,10 @@ func (ap *ArgParser) createArgs() {
 
 	ap.parser.StringArrayVarP(&ap.branches, "branch", "b", nil,
 		"Extra branch to check (repeatable)")
+	
+	ap.parser.BoolVarP(&ap.args.OnlyCheck, "only-check", "C", false, 
+		"Only check if .git dir is reachable. Disable dumping")
+
+	ap.parser.StringVarP(&ap.filePath, "file", "f", "",
+		"Domain list file")
 }

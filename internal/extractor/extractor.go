@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -37,9 +38,9 @@ var errStopSuccess = errors.New("stop requested")
 
 
 type Extractor struct {
-	args   *argparser.Arguments
-	client *workers.Client
-	head   *http.Response
+	args    *argparser.Arguments
+	client  *workers.Client
+	head    *http.Response
 }
 
 
@@ -50,11 +51,14 @@ func New(args *argparser.Arguments) *Extractor {
 
 
 
-func (l *Extractor) Execute(ctx context.Context) error {
+func (l *Extractor) Execute() error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	l.checkOutputDir()
 	l.client = workers.NewClient(l.args)
-
-	if err := l.findBaseURL();                err != nil { return err }
+	l.findBaseURL()
+	
 	if err := l.tryToConnect(ctx);            err != nil { return err }
 	if err := l.validResponse();              err != nil { return err }
 	if err := l.tryFastDump(ctx);             err != nil { return err }
@@ -81,15 +85,13 @@ func (l *Extractor) checkOutputDir() {
 
 
 
-func (l *Extractor) findBaseURL() error {
+func (l *Extractor) findBaseURL() {
 	url := strings.TrimRight(l.args.URL, "/")
 	url  = strings.TrimSuffix(url, "HEAD")
 	url  = strings.TrimRight(url, "/")
 	url  = strings.TrimSuffix(url, ".git")
 
-	l.args.URL = strings.TrimRight(url, "/")
-	
-	return nil
+	l.args.URL = strings.TrimRight(url, "/")	
 }
 
 

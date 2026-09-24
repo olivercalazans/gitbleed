@@ -30,10 +30,10 @@ import (
 
 
 func (l *Extractor) tryToConnect(ctx context.Context) error {
-	resp, err := l.client.Get(ctx, l.args.URL+"/.git/HEAD", true)
+	resp, err := l.client.Get(ctx, l.args.URL + "/.git/HEAD", true)
 	
 	if err != nil {
-		return fmt.Errorf("unable to connect to %s: %w", l.args.URL, err)
+		return fmt.Errorf("unable to connect to %s: %s", l.args.URL, err.Error())
 	}
 	
 	l.head = resp

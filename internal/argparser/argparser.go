@@ -27,6 +27,7 @@ type ArgParser struct {
 	parser *pflag.FlagSet
 
 	url                   string
+	urlList               []string
 	directory             string
 	proxy                 string
 	clientCertP12         string
@@ -38,6 +39,7 @@ type ArgParser struct {
 	userAgent             string
 	headers               []string
 	branches              []string
+	filePath              string
 }
 
 
@@ -70,6 +72,7 @@ func (ap *ArgParser) GetArgs() (*Arguments, error) {
 		HTTPHeaders           : headers,
 		Branches			  : ap.branches,
 		Delay			      : ap.delay,
+		URLList               : ap.urlList,
 	}
 
 	return args, nil
@@ -82,6 +85,10 @@ func (ap *ArgParser) parse() error {
 
 	if err := ap.parser.Parse(os.Args[1:]); err != nil {
 		handleHelp(err)
+		return err
+	}
+
+	if err := ap.validFilePath(); err != nil {
 		return err
 	}
 

@@ -12,15 +12,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package check
+package fsutils
 
 import (
-	"net/http"
+	"bufio"
+	"os"
 	"strings"
 )
 
 
 
-func IsHTML(resp *http.Response) bool {
-	return strings.Contains(resp.Header.Get("Content-Type"), "text/html")
+func ReadLines(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	first := true
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if first {
+			line = strings.TrimPrefix(line, "\ufeff")
+			first = false
+		}
+
+		line = strings.TrimSpace(line)
+
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		lines = append(lines, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 }
