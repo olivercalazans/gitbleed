@@ -19,7 +19,6 @@ import (
 
 	"gitbleed/internal/argparser"
 	"gitbleed/internal/display"
-	"gitbleed/internal/valid"
 	"gitbleed/internal/workers"
 
 	"golang.org/x/sync/errgroup"
@@ -42,11 +41,7 @@ func Scan(args *argparser.Arguments) {
 			continue
 		}
 
-		ok, _, msg := valid.VerifyResponse(resp)
-		
-		if !ok {
-			display.Warning(msg)
-		}
+		display.Response(resp)
 
 		resp.Body.Close()
 	}

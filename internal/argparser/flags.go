@@ -55,8 +55,14 @@ func (ap *ArgParser) createArgs() {
 	ap.parser.StringVarP(&ap.directory, "out", "o", "", "Output directory (required)")
 
 	ap.parser.StringVar(&ap.proxy, "proxy", "", "Proxy to use")
-	ap.parser.StringVar(&ap.clientCertP12, "client-cert-p12", "", "Client certificate (PKCS#12)")
-	ap.parser.StringVar(&ap.clientCertP12Password, "client-cert-p12-password", "", "Certificate password")
+	
+	ap.parser.StringVar(&ap.clientCertP12, "client-cert-p12", "", 
+		"Client certificate (PKCS#12)",
+	)
+	
+	ap.parser.StringVar(&ap.clientCertP12Password, "client-cert-p12-password", "", 
+		"Certificate password",
+	)
 
 	ap.parser.Float64VarP(&ap.delay, "delay", "d", 0, "Delay between requests (seconds)")
 
@@ -74,7 +80,7 @@ func (ap *ArgParser) createArgs() {
 	ap.parser.StringArrayVarP(&ap.branches, "branch", "b", nil,
 		"Extra branch to check (repeatable)")
 	
-	ap.parser.BoolVarP(&ap.args.OnlyCheck, "only-check", "C", false, 
+	ap.parser.BoolVarP(&ap.onlyCheck, "only-check", "C", false, 
 		"Only check if .git dir is reachable. Disable dumping")
 
 	ap.parser.StringVarP(&ap.filePath, "file", "f", "",

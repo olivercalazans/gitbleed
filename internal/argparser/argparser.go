@@ -40,6 +40,7 @@ type ArgParser struct {
 	headers               []string
 	branches              []string
 	filePath              string
+	onlyCheck             bool
 }
 
 
@@ -73,6 +74,7 @@ func (ap *ArgParser) GetArgs() (*Arguments, error) {
 		Branches			  : ap.branches,
 		Delay			      : ap.delay,
 		URLList               : ap.urlList,
+		OnlyCheck             : ap.onlyCheck,
 	}
 
 	return args, nil
