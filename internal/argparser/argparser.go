@@ -16,116 +16,89 @@ package argparser
 
 import (
 	"errors"
+	"fmt"
+	"gitbleed/internal/display"
 	"os"
 
 	"github.com/spf13/pflag"
 )
 
 
-type ArgParser struct {
-	args   *Arguments
-	parser *pflag.FlagSet
+type Arguments struct {
+	Directory    string
+	URL          string
+	URLList      []string
+	Jobs         int
+	Retry        int
+	Timeout      int
+	HTTPHeaders  map[string]string
+	Branches     []string
+	Delay        float64
+	OnlyCheck    bool
+}
 
-	url                   string
-	urlList               []string
-	directory             string
-	proxy                 string
-	delay                 float64
-	jobs                  int
-	retry                 int
-	timeout               int
-	userAgent             string
-	headers               []string
-	branches              []string
-	filePath              string
-	onlyCheck             bool
+
+
+type ArgParser struct {
+	args     *Arguments
+	parser   *pflag.FlagSet
+	errList  []error
+	parsedArgs
 }
 
 
 
 func NewParser() *ArgParser {
-	return &ArgParser{}
+	return &ArgParser{
+		errList: make([]error, 0),
+	}
 }
 
 
 
 func (ap *ArgParser) GetArgs() (*Arguments, error) {
-	if err := ap.parse(); err != nil {
-		return nil, err
-	}
+	ap.createArgs()
 
-	headers, err := ap.validHeaders()
-	if err != nil {
-		return nil, err
+	if err := ap.parser.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			os.Exit(0)
+		}
 	}
 
 	args := &Arguments{
-		Directory   : ap.directory,
-		Proxy       : ap.proxy,
-		URL	        : ap.url,
-		Jobs        : ap.jobs,
-		Retry       : ap.retry,
-		Timeout	    : ap.timeout,
-		HTTPHeaders : headers,
+		URLList     : ap.validFilePath(),
+		URL	        : ap.validURL(),
+		Jobs        : ap.validJobs(),
+		HTTPHeaders : ap.validHeaders(),
+		Retry       : ap.validRetry(),
+		Timeout	    : ap.validTimeout(),
+		Delay	    : ap.validDelay(),
+		Directory   : ap.createDir(),
 		Branches    : ap.branches,
-		Delay	    : ap.delay,
-		URLList     : ap.urlList,
 		OnlyCheck   : ap.onlyCheck,
 	}
 
+	ap.displayError()
 	return args, nil
 }
 
 
 
-func (ap *ArgParser) parse() error {
-	ap.createArgs()
-
-	if err := ap.parser.Parse(os.Args[1:]); err != nil {
-		handleHelp(err)
-		return err
-	}
-
-	if err := ap.validFilePath(); err != nil {
-		return err
-	}
-
-	if err := ap.validURL(); err != nil {
-		ap.parser.Usage()
-		return err
-	}
-
-	if err := ap.validJobs(); err != nil {
-		return err
-	}
-
-	if err := ap.validRetry(); err != nil {
-		return err
-	}
-
-	if err := ap.validTimeout(); err != nil {
-		return err
-	}
-
-	if err := ap.validProxy(); err != nil {
-		return err
-	}
-
-	if err := ap.validDelay(); err != nil {
-		return err
-	}
-
-	if err := ap.createDir(); err != nil {
-		return err
-	}
-
-	return nil
+func (ap *ArgParser) addErr(err error) {
+	ap.errList = append(ap.errList, err)
 }
 
 
 
-func handleHelp(err error) {
-	if errors.Is(err, pflag.ErrHelp) {
-		os.Exit(0)
+func (ap *ArgParser) displayError() {
+	if len(ap.errList) <= 0 {
+		return
+	} 
+
+	for i, err := range ap.errList {
+		fmt.Printf("%d. %s\n",i+1 , err.Error())
 	}
+	fmt.Printf("\n")
+
+	display.Fatal(fmt.Errorf("Error during argument parsing"))
 }

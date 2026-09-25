@@ -18,40 +18,57 @@ import (
 	"fmt"
 	"gitbleed/internal/fsutils"
 	"os"
-	"regexp"
 	"strings"
 )
 
 
 
-func (ap *ArgParser) validURL() error {
-	if ap.filePath != "" {
+func (ap *ArgParser) validFilePath() []string {
+	if ap.filePath == "" {
 		return nil
 	}
+
+	urls, err := fsutils.ReadLines(ap.filePath)
 	
-	if ap.url == "" {
-		return fmt.Errorf("--url is required")
+	if err != nil {
+		ap.addErr(err)
 	}
 
-	return nil
+	return urls
 }
 
 
 
-func (ap *ArgParser) validHeaders() (map[string]string, error) {
-	httpHeaders := map[string]string{
-		"User-Agent": "curl/8.14.1",
-		"Accept":     "*/*",
+func (ap *ArgParser) validURL() string {
+	if ap.filePath != "" {
+		return ""
+	}
+	
+	if ap.url == "" {
+		ap.addErr(fmt.Errorf("--url or -f/--file required"))
 	}
 
+	return ap.url
+}
+
+
+
+func (ap *ArgParser) validHeaders() map[string]string {
 	if len(ap.headers) == 0 {
-		return httpHeaders, nil
+		return map[string]string{
+			"User-Agent": "curl/8.14.1",
+			"Accept":     "*/*",
+		}
 	}
+
+	httpHeaders := map[string]string{}
 
 	for _, header := range ap.headers {
 		tokens := strings.SplitN(header, "=", 2)
 		if len(tokens) != 2 {
-			return nil, fmt.Errorf("HTTP header must have the form NAME=VALUE, got %s", header)
+			err := fmt.Errorf("HTTP header must have the form NAME=VALUE, got %s", header)
+			ap.errList = append(ap.errList, err)
+			return nil
 		}
 
 		name  := strings.TrimSpace(tokens[0])
@@ -60,115 +77,78 @@ func (ap *ArgParser) validHeaders() (map[string]string, error) {
 		httpHeaders[name] = value
 	}
 
-	return httpHeaders, nil
+	return httpHeaders
 }
 
 
 
-func (ap *ArgParser) validJobs() error {
+func (ap *ArgParser) validJobs() int {
 	if ap.jobs < 1 {
-		return fmt.Errorf("Invalid number of jobs, got %d", ap.jobs)
+		ap.addErr(fmt.Errorf("Invalid number of jobs, got %d", ap.jobs))
 	}
 
-	return nil
+	return ap.jobs
 }
 
 
 
-func (ap *ArgParser) validRetry() error {
+func (ap *ArgParser) validRetry() int {
 	if ap.retry < 1 {
-		return fmt.Errorf("Invalid number of retries, got %d", ap.retry)
+		ap.addErr(fmt.Errorf("Invalid number of retries, got %d", ap.retry))
 	}
 
-	return nil
+	return ap.retry
 }
 
 
 
-func (ap *ArgParser) validTimeout() error {
+func (ap *ArgParser) validTimeout() int {
 	if ap.timeout < 1 {
-		return fmt.Errorf("Invalid timeout, got %d", ap.timeout)
+		ap.addErr(fmt.Errorf("Invalid timeout, got %d", ap.timeout))
 	}
 
-	return nil
+	return ap.timeout
 }
 
 
 
-func (ap *ArgParser) validDelay() error {
+func (ap *ArgParser) validDelay() float64 {
 	if ap.delay < 0 {
-		return fmt.Errorf("Delay value cannot be negative. Got %v", ap.delay)
+		ap.addErr(fmt.Errorf("Delay value cannot be negative. Got %v", ap.delay))
 	}
 
-	return nil
+	return ap.delay
 }
 
 
 
-func (ap *ArgParser) validProxy() error {
-	if ap.proxy == "" {
-		return nil
-	}
-
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`^socks5:(.*):(\d+)$`),
-		regexp.MustCompile(`^socks4:(.*):(\d+)$`),
-		regexp.MustCompile(`^http://(.*):(\d+)$`),
-		regexp.MustCompile(`^(.*):(\d+)$`),
-	}
-
-	for _, re := range patterns {
-		if re.MatchString(ap.proxy) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("Invalid proxy, got %s", ap.proxy)
-}
-
-
-
-func (ap *ArgParser) validFilePath() error {
-	if ap.filePath == "" {
-		return nil
-	}
-
-	urls, err := fsutils.ReadLines(ap.filePath)
-	
-	if err != nil {
-		return err
-	}
-
-	ap.urlList = urls
-
-	return nil
-}
-
-
-
-func (ap *ArgParser) createDir() error {
+func (ap *ArgParser) createDir() string {
 	if ap.filePath != "" {
-		return nil
+		return ""
 	}
 
 	if ap.directory == "" {
-		return fmt.Errorf("-o/--out is required")
+		ap.addErr(fmt.Errorf("-o/--out is required"))
+		return ""
 	}
 
 	if _, err := os.Stat(ap.directory); os.IsNotExist(err) {
 		if err := os.MkdirAll(ap.directory, 0755); err != nil {
-			return err
+			ap.addErr(err)
+			return ""
 		}
 	}
 
 	info, err := os.Stat(ap.directory)
 	if err != nil {
-		return err
+		ap.addErr(err)
+		return ""
 	}
 
 	if !info.IsDir() {
-		return fmt.Errorf("%s is not a directory", ap.directory)
+		ap.addErr(fmt.Errorf("%s is not a directory", ap.directory))
+		return ""
 	}
 
-	return nil
+	return ap.directory
 }

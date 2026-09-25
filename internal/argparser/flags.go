@@ -22,19 +22,20 @@ import (
 )
 
 
-
-type Arguments struct {
-	Directory             string
-	Proxy                 string
-	URL                   string
-	URLList               []string
-	Jobs                  int
-	Retry                 int
-	Timeout               int
-	HTTPHeaders           map[string]string
-	Branches              []string
-	Delay                 float64
-	OnlyCheck             bool
+type parsedArgs struct {
+	url        string
+	urlList    []string
+	directory  string
+	proxy      string
+	delay      float64
+	jobs       int
+	retry      int
+	timeout    int
+	userAgent  string
+	headers    []string
+	branches   []string
+	filePath   string
+	onlyCheck  bool
 }
 
 
@@ -42,6 +43,7 @@ type Arguments struct {
 func (ap *ArgParser) createArgs() {
 	ap.parser = pflag.NewFlagSet("gitlooter", pflag.ContinueOnError)
 	ap.parser.SortFlags = false
+	
 	ap.parser.SetInterspersed(true)
 
 	ap.parser.Usage = func() {
@@ -49,30 +51,52 @@ func (ap *ArgParser) createArgs() {
 		ap.parser.PrintDefaults()
 	}
 
-	ap.parser.StringVar(&ap.url, "url", "", "URL to dump (required)")
-	ap.parser.StringVarP(&ap.directory, "out", "o", "", "Output directory (required)")
+	ap.parser.StringVar(&ap.url, "url", "",
+		"URL to dump (required)",
+	)
 
-	ap.parser.StringVar(&ap.proxy, "proxy", "", "Proxy to use")
+	ap.parser.StringVarP(&ap.directory, "out", "o", "",
+		"Output directory (required)",
+	)
 
-	ap.parser.Float64VarP(&ap.delay, "delay", "d", 0, "Delay between requests (seconds)")
+	ap.parser.StringVar(&ap.proxy, "proxy", "",
+		"Proxy to use",
+	)
 
-	ap.parser.IntVarP(&ap.jobs, "jobs", "j", 10, "Simultaneous requests")
-	ap.parser.IntVarP(&ap.retry, "retry", "r", 3, "Request attempts before giving up")
-	ap.parser.IntVarP(&ap.timeout, "timeout", "t", 3, "Timeout in seconds")
+	ap.parser.Float64VarP(&ap.delay, "delay", "d", 0,
+		"Delay between requests (seconds)",
+	)
+
+	ap.parser.IntVarP(&ap.jobs, "jobs", "j", 10,
+		"Simultaneous requests",
+	)
+
+	ap.parser.IntVarP(&ap.retry, "retry", "r", 3, 
+		"Request attempts before giving up",
+	)
+	
+	ap.parser.IntVarP(&ap.timeout, "timeout", "t", 3, 
+		"Timeout in seconds",
+	)
 
 	ap.parser.StringVarP(&ap.userAgent, "user-agent", "u",
 		"Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
-		"User-agent")
+		"User-agent",
+	)
 
 	ap.parser.StringArrayVarP(&ap.headers, "header", "H", nil,
-		"Extra HTTP header, e.g. NAME=VALUE")
+		"Extra HTTP header, e.g. NAME=VALUE",
+	)
 
 	ap.parser.StringArrayVarP(&ap.branches, "branch", "b", nil,
-		"Extra branch to check (repeatable)")
+		"Extra branch to check (repeatable)",
+	)
 	
 	ap.parser.BoolVarP(&ap.onlyCheck, "only-check", "C", false, 
-		"Only check if .git dir is reachable. Disable dumping")
+		"Only check if .git dir is reachable. Disable dumping",
+	)
 
 	ap.parser.StringVarP(&ap.filePath, "file", "f", "",
-		"Domain list file")
+		"Domain list file",
+	)
 }
