@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"gitbleed/internal/argparser"
+	"gitbleed/internal/check"
 	"gitbleed/internal/display"
 	"gitbleed/internal/workers"
 
@@ -29,21 +30,30 @@ import (
 func Scan(args *argparser.Arguments) {
 	client := workers.NewClient(args)
 
+	progress := display.NewProgress(len(args.URLList))
+	defer progress.Done()
+
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(args.Jobs)
 
 	for _, url := range args.URLList {
-		url := url
-
 		g.Go(func() error {
-			resp, err := client.Get(ctx, url+"/.git/HEAD", false)
+			url = check.EnsureProto(url)
+			url = check.EnsureSufixGit(url)
+			
+			resp, err := client.Get(ctx, url, false)
 			if err != nil {
-				display.Warning(err.Error())
+				progress.Miss()
 				return nil
 			}
 			defer resp.Body.Close()
 
-			display.Response(resp)
+			if line, ok := display.FormatOnly200(resp); ok {
+				progress.Hit(line)
+			} else {
+				progress.Miss()
+			}
+
 			return nil
 		})
 	}

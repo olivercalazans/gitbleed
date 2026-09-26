@@ -78,3 +78,25 @@ func Fatal(err error) {
 	fmt.Fprintf(os.Stderr, "[%sERR%s] %s\n", red, reset, err.Error())
 	os.Exit(1)
 }
+
+
+
+func FormatOnly200(resp *http.Response) (string, bool) {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+
+	status := fmt.Sprintf("%s%d%s", green, resp.StatusCode, reset)
+	
+	tag := " "
+	if check.IsHTML(resp) {
+		tag = htmlTag
+	}
+
+	url := ""
+	if resp.Request != nil {
+		url = resp.Request.URL.String()
+	}
+
+	return fmt.Sprintf("[%s]%s%s", status, tag, url), true
+}
