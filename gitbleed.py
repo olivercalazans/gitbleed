@@ -1,4 +1,5 @@
 # Copyright 2026 Oliver R. Calazans Jeronimo
+# Modified from the original project git-dumper (Copyright (c) 2017 Maxime Arthaud)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
