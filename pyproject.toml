@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gitbleed"
+version = "1.0.2"
+authors = [
+  { name="Oliver R. Calazans Jeronimo" },
+]
+description = "Tool to dump and reconstruct an entire Git repository from a publicly exposed .git folder on a web server."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "Apache-2.0"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+dependencies = [
+    "beautifulsoup4==4.15.0",
+    "dulwich==1.2.17",
+    "requests==2.34.2",
+    "cryptography==50.0.2",
+    "requests_pkcs12==1.27",
+    "PySocks==1.7.1",
+    "certifi==2026.7.22",
+]
+
+[project.scripts]
+gitbleed = "gitbleed.main:main"

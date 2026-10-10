@@ -6,6 +6,29 @@
 <br>
 
 
+## Installation
+
+You can easily install **GitBleed** directly from PyPI using `pip`. 
+
+### Prerequisites
+* Python **3.13** or higher is required.
+
+### Standard Installation
+Run the following command in your terminal:
+```bash
+pip install gitbleed
+```
+
+### Usage
+Once installed, the `gitbleed` command will be available globally in your system or virtual environment. You can verify the installation and view available options by running:
+```bash
+gitbleed --help
+```
+
+
+<br>
+
+
 ## Security Warning (RCE Risk)
 >[!CAUTION]
 >

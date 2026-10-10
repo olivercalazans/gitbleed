@@ -1128,7 +1128,7 @@ class FindObjectsWorker(DownloadWorker):
 
 
 
-if __name__ == "__main__":
+def main():
     try:
         git_looter = GitBleed()
         git_looter.execute()
@@ -1137,3 +1137,8 @@ if __name__ == "__main__":
         pass
     except Exception as e:
         Display.fatal(f'{e}')
+
+
+
+if __name__ == "__main__":
+    main()
