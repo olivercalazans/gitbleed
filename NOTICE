@@ -1,0 +1,7 @@
+GitBleed
+Copyright 2026 Oliver Calazans
+
+This product is a derivative work that includes software developed by third parties:
+- git-dumper (https://github.com/arthaud/git-dumper)
+  Copyright (c) 2017 Maxime Arthaud
+  Licensed under the MIT License.
