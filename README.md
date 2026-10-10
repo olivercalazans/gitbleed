@@ -33,5 +33,22 @@
 <br>
 
 
+## Credits
+
+This project is a derivative work based on the **[git-dumper](https://github.com/arthaud/git-dumper)** utility developed by *Maxime Arthaud*. 
+
+It specifically forks the logic established between versions **1.0.8** and **1.0.9**, building upon the community contributions from mid-2026.
+
+The main modifications introduced in this version include:
+* **Object-Oriented Refactoring:** Rewrote the core architecture to leverage Object-Oriented Programming (OOP) principles for better maintainability.
+* **Visual & Display Enhancements:** Refactored terminal outputs and logging messages to provide a cleaner, more intuitive visual identification.
+* **Robust Error Handling:** Integrated comprehensive exception handling to make the tool more resilient and informative during execution failures.
+* **Bug Fixes:** Resolved underlying code defects and improved reliability.
+* **CLI Improvements:** Added new flags for granular request control and eliminated the reliance on positional arguments for improved flexibility.
+
+
+<br>
+
+
 ## License
-This project is licensed under the APACHE-2.0 License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache-2.0 License. See the [LICENSE](LICENSE) file for details.
