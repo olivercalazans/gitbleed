@@ -11,7 +11,7 @@
 You can easily install **GitBleed** directly from PyPI using `pip`. 
 
 ### Prerequisites
-* Python **3.13** or higher is required.
+* Python **3.10** or higher is required.
 
 ### Standard Installation
 Run the following command in your terminal:
