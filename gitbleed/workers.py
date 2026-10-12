@@ -16,17 +16,25 @@
 import multiprocessing
 import os
 import re
-import requests
 import traceback
 import time
 from contextlib      import closing
 from requests_pkcs12 import Pkcs12Adapter
 
-from check   import *
-from display import Display
-from helpers import *
-from parser  import Arguments
+import dulwich.objects
+import requests
 
+from check   import is_safe_path, is_html
+from display import Display
+from parser  import Arguments
+from helpers import (
+    create_intermediate_dirs, 
+    get_indexed_files, 
+    get_referenced_sha1, 
+    verify_response, 
+    write_file_atomic,
+    write_stream_atomic
+)
 
 
 
@@ -120,12 +128,10 @@ class DownloadWorker(Worker):
 
 
     def _request(self, url: str, **kwargs) -> requests.Response:
-        response = self._session.get(url, **kwargs)
-
         if self._delay > 0:
             time.sleep(self._delay)
 
-        return response
+        return self._session.get(url, **kwargs)
 
 
 
@@ -226,7 +232,7 @@ class FindRefsWorker(DownloadWorker):
 
         abspath = os.path.abspath(os.path.join(args.directory, filepath))
         create_intermediate_dirs(abspath)
-        write_file_atomic(abspath, response.text, mode="w")
+        write_file_atomic(abspath, response.text)
 
         tasks = []
 

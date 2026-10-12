@@ -20,17 +20,30 @@ import re
 import subprocess
 import sys
 import time
-import dulwich.index
-import dulwich.pack
-import requests
 import urllib3
 from requests_pkcs12 import Pkcs12Adapter
 
+import dulwich.index
+import dulwich.pack
+import requests
+
 from check   import is_html
 from display import Display
-from helpers import *
 from parser  import Arguments, Parser
-from workers import *
+from helpers import (
+    get_indexed_files,
+    verify_response,
+    get_referenced_sha1,
+    write_file_atomic,
+    normalize_url
+)
+from workers import (
+    Worker,
+    DownloadWorker,
+    RecursiveDownloadWorker,
+    FindRefsWorker,
+    FindObjectsWorker,
+)
 
 
 
@@ -50,7 +63,6 @@ class GitBleed:
         self._get_args()
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._create_session()
-        self._find_base_url()
         self._try_to_connect()
         self._valid_response()
         self._setup_env_for_proxy()
@@ -108,28 +120,13 @@ class GitBleed:
 
 
 
-    def _find_base_url(self):
-        url: str = self._args.url
-
-        url = url.rstrip("/")
-        if url.endswith("HEAD"):
-            url = url[:-4]
-
-        url = url.rstrip("/")
-        if url.endswith(".git"):
-            url = url[:-4]
-
-        self._args.url = url.rstrip("/")
-
-
-
     def _try_to_connect(self):
         try:
+            time.sleep(self._args.delay)
             self._response = self._session.get(
                 f"{self._args.url}/.git/HEAD",
                 timeout=self._args.timeout,
             )
-            time.sleep(self._args.delay)
         except Exception as e:
             Display.fatal(f"Unable to connect to {self._args.url}. Error: {e}")
 
@@ -173,10 +170,7 @@ class GitBleed:
 
     def _try_fast_dump(self):
         Display.section("Trying fast dumping")
-
         response = self._session.get(f"{self._args.url}/.git/", allow_redirects=False)
-        time.sleep(self._args.delay)
-
         Display.response(response)
 
         if (
@@ -496,18 +490,18 @@ class GitBleed:
         if not os.path.isfile(filepath):
             Display.warning(".git/config not found")
             return
-    
+
         UNSAFE = r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
-    
+
         with open(filepath, "r") as f:
             content = f.read()
-    
+
         modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
-    
+
         if content != modified_content:
             Display.section("Sanitizing .git/config")
             Display.warning(f"'{filepath}' file was altered")
-            write_file_atomic(filepath, modified_content, mode="w")
+            write_file_atomic(filepath, modified_content)
 
 
 
@@ -516,8 +510,10 @@ def main():
     try:
         git_looter = GitBleed()
         git_looter.execute()
+
     except KeyboardInterrupt:
-        pass
+        sys.exit(130)
+    
     except Exception as e:
         Display.fatal(f'{e}')
 

@@ -13,13 +13,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import urllib.parse
+
 import bs4
 import dulwich.objects
-import os
 import requests
-import urllib.parse
+
 from display import Display
 from check   import is_safe_path, is_html
+
+
+
+def normalize_url(url: str) -> str:    
+    url = url.rstrip("/")
+    if url.endswith("HEAD"):
+        url = url[:-4]
+    
+    url = url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    
+    return url.rstrip("/")
 
 
 
@@ -123,11 +138,14 @@ def write_file_atomic(path: str, content):
 
 def write_stream_atomic(path: str, chunks):
     tmp = path + ".tmp"
+
     try:
         with open(tmp, "wb") as f:
             for chunk in chunks:
                 f.write(chunk)
+    
         os.replace(tmp, path)
+    
     except Exception:
         if os.path.exists(tmp):
             os.remove(tmp)

@@ -14,11 +14,11 @@
 # limitations under the License.
 
 import argparse
-import urllib
+import urllib.parse
 import os
 import re
 from dataclasses import dataclass
-from pathlib     import Path
+from helpers     import normalize_url
 
 
 
@@ -51,6 +51,7 @@ class Parser:
     def parse(self):
         self._create_args()
         self._args = self._parser.parse_args()
+        self._args.url = normalize_url(self._args.url)
         self._valid_jobs()
         self._valid_retry()
         self._valid_timeout()
@@ -163,9 +164,6 @@ class Parser:
     
     
     def _create_dir(self):
-        if self._args.output == "":
-            self._args.output = Path(__file__).resolve().parent
-
         if not os.path.isdir(self._args.output):
             self._parser.error(f"{self._args.output} is not a directory")
 
