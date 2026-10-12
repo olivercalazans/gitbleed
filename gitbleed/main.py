@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import multiprocessing
 import os
 import queue
@@ -21,19 +20,30 @@ import re
 import subprocess
 import sys
 import time
-import traceback
-import urllib.parse
-from contextlib import closing
-from dataclasses import dataclass
-from pathlib import Path
-
-import bs4
-import dulwich.index
-import dulwich.objects
-import dulwich.pack
-import requests
 import urllib3
 from requests_pkcs12 import Pkcs12Adapter
+
+import dulwich.index
+import dulwich.pack
+import requests
+
+from check   import is_html
+from display import Display
+from parser  import Arguments, Parser
+from helpers import (
+    get_indexed_files,
+    verify_response,
+    get_referenced_sha1,
+    write_file_atomic,
+    normalize_url
+)
+from workers import (
+    Worker,
+    DownloadWorker,
+    RecursiveDownloadWorker,
+    FindRefsWorker,
+    FindObjectsWorker,
+)
 
 
 
@@ -53,7 +63,6 @@ class GitBleed:
         self._get_args()
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._create_session()
-        self._find_base_url()
         self._try_to_connect()
         self._valid_response()
         self._setup_env_for_proxy()
@@ -111,28 +120,13 @@ class GitBleed:
 
 
 
-    def _find_base_url(self):
-        url: str = self._args.url
-
-        url = url.rstrip("/")
-        if url.endswith("HEAD"):
-            url = url[:-4]
-
-        url = url.rstrip("/")
-        if url.endswith(".git"):
-            url = url[:-4]
-
-        self._args.url = url.rstrip("/")
-
-
-
     def _try_to_connect(self):
         try:
+            time.sleep(self._args.delay)
             self._response = self._session.get(
                 f"{self._args.url}/.git/HEAD",
                 timeout=self._args.timeout,
             )
-            time.sleep(self._args.delay)
         except Exception as e:
             Display.fatal(f"Unable to connect to {self._args.url}. Error: {e}")
 
@@ -144,9 +138,16 @@ class GitBleed:
         if self._response.status_code >= 400:
             Display.fatal("Target unreachable. Dumping stopped")
 
-        elif self._response.status_code >= 300:
-            Display.warning(f"Redirection required to {self._response.headers['Location']}")
-            sys.exit(0)
+        if self._response.status_code == 304:
+            Display.fatal(
+                f"Unexpected status {self._response.status_code} " +
+                f"from {self._response.url} (no Location header). " +
+                "A proxy or CDN may be caching the request."
+            )
+
+        if self._response.status_code >= 300:
+            redirection = self._response.headers.get('Location', "Unknown location")
+            Display.fatal(f"Redirection required to {redirection}")
 
         if not valid:
             Display.fatal(f"Invalid response from {self._response.url}: {error_msg}")
@@ -169,10 +170,7 @@ class GitBleed:
 
     def _try_fast_dump(self):
         Display.section("Trying fast dumping")
-
         response = self._session.get(f"{self._args.url}/.git/", allow_redirects=False)
-        time.sleep(self._args.delay)
-
         Display.response(response)
 
         if (
@@ -206,7 +204,12 @@ class GitBleed:
                 num_pending_tasks += 1
                 tasks_seen.add(task)
 
-        processes = [worker(pending_tasks, tasks_done, self._args) for _ in range(self._args.jobs)]
+        processes: list[Worker] = [
+            worker(
+                pending_tasks, tasks_done, self._args) 
+                for _ in range(self._args.jobs
+            )
+        ]
 
         for p in processes:
             p.start()
@@ -231,8 +234,13 @@ class GitBleed:
                     tasks_seen.add(task)
 
         if timed_out:
-            for p in processes: p.terminate()
-            for p in processes: p.join()
+            for p in processes:
+                p.join(timeout=5)
+
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+                    p.join()
             return
 
         for _ in range(self._args.jobs):
@@ -240,26 +248,6 @@ class GitBleed:
 
         for p in processes:
             p.join()
-
-
-
-    UNSAFE = r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
-
-    def _sanitize_file(self, filepath=".git/config"):
-        if not os.path.isfile(filepath):
-            Display.warning(".git/config not found")
-            return
-
-        Display.section("Sanitizing .git/config")
-
-        with open(filepath, 'r+') as f:
-            content = f.read()
-            modified_content = re.sub(self.UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
-
-            if content != modified_content:
-                Display.warning(f"'{filepath}' file was altered")
-                f.seek(0)
-                f.write(modified_content)
 
 
 
@@ -445,6 +433,7 @@ class GitBleed:
             index = dulwich.index.Index(index_path)
             for entry in index.iterobjects():
                 objs.add(entry[1].decode())
+
         except Exception:
             pass
 
@@ -496,634 +485,23 @@ class GitBleed:
 
 
 
-
-
-@dataclass(slots=True)
-class Arguments:
-    cert_p12_pwd : str
-    cert_p12     : str
-    url          : str
-    directory    : str
-    proxy        : str
-    jobs         : int
-    retry        : int
-    timeout      : int
-    http_headers : dict[str, str]
-    branches     : list[str]
-    delay        : float
-
-
-
-class Parser:
-
-    __slots__ = ('_args', '_parser')
-
-    def __init__(self):
-        self._args   : argparse.Namespace      = None
-        self._parser : argparse.ArgumentParser = None
-
-
-
-    def parse(self):
-        self._create_args()
-        self._args = self._parser.parse_args()
-        self._valid_jobs()
-        self._valid_retry()
-        self._valid_timeout()
-        self._valid_proxy()
-        self._valid_certificate()
-        self._valid_delay()
-        self._create_dir()
-
-
-
-    def _create_args(self):
-        self._parser = argparse.ArgumentParser(
-            usage="gitbleed --url example.com <ARGS>",
-            description="Dump a git repository from a website.",
-            formatter_class=lambda prog: argparse.HelpFormatter(
-                prog,
-                max_help_position=40,
-                width=100,
-            ),
-        )
-        self._parser.add_argument(
-            "--url", type=str, required=True,
-            help="URL of the git repository to dump"
-        )
-        self._parser.add_argument("--proxy", help="Proxy URL, e.g. `socks5://127.0.0.1:9050`")
-        self._parser.add_argument("--cert-p12", help="Client certificate in PKCS#12")
-        self._parser.add_argument("--cert-p12-pwd", help="Password for the client certificate")
-        self._parser.add_argument(
-            "-d", "--delay", type=float, default=0,
-            help="Delay in seconds between requests"
-        )
-        self._parser.add_argument(
-            "-o", "--output", type=str, default="",
-            help="Directory where the repository will be saved",
-        )
-        self._parser.add_argument(
-            "-j", "--jobs", type=int, default=10,
-            help="Number of simultaneous requests",
-        )
-        self._parser.add_argument(
-            "-r", "--retry", type=int, default=3,
-            help="Number of request attempts before giving up",
-        )
-        self._parser.add_argument(
-            "-t", "--timeout", type=int, default=3,
-            help="Maximum time in seconds per request",
-        )
-        self._parser.add_argument(
-            "-u", "--user-agent", type=str,
-            default="Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
-            help="User-agent to use for requests",
-        )
-        self._parser.add_argument(
-            "-H", "--header", type=str, action="append",
-            help="Additional http headers, e.g `NAME=VALUE`",
-        )
-        self._parser.add_argument(
-            "-b", "--branch", dest="branches", action="append",
-            help=(
-                "Additional branch names to check for, e.g. `-b dev -b prod`. "
-                "The default branches (`main`, `master`, `staging`, `production`, "
-                "`development`) are always checked."
-            ),
-        )
-
-    
-    def _valid_jobs(self):
-        if self._args.jobs < 1:
-            self._parser.error(f"Invalid number of jobs, got {self._args.jobs}")
-
-    
-    def _valid_retry(self):
-        if self._args.retry < 1:
-            self._parser.error(f"Invalid number of retries, got {self._args.retry}")
-
-    
-    def _valid_timeout(self):
-        if self._args.timeout < 1:
-            self._parser.error(f"Invalid timeout, got {self._args.timeout}")
-
-    
-    def _valid_delay(self):
-        if self._args.delay < 0:
-            self._parser.error(f"Delay value cannot be negative. Got {self._args.delay}")
-
-    
-    def _valid_proxy(self):
-        if not self._args.proxy:
+    @staticmethod
+    def _sanitize_file(filepath=".git/config"):
+        if not os.path.isfile(filepath):
+            Display.warning(".git/config not found")
             return
 
-        raw = self._args.proxy
-        if "://" not in raw:
-            raw = "socks5://" + raw
+        UNSAFE = r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
 
-        try:
-            parsed = urllib.parse.urlparse(raw)
-        except ValueError as e:
-            self._parser.error(f"Invalid proxy, got {self._args.proxy}: {e}")
+        with open(filepath, "r") as f:
+            content = f.read()
 
-        if parsed.scheme not in ("socks5", "socks5h", "socks4", "socks4a", "http", "https"):
-            self._parser.error(
-                f"Unsupported proxy scheme '{parsed.scheme}' in {self._args.proxy}"
-            )
+        modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
 
-        if not parsed.hostname or not parsed.port:
-            self._parser.error(f"Invalid proxy, got {self._args.proxy}")
-
-        self._args.proxy = f"{parsed.scheme}://{parsed.netloc}"
-
-    
-    
-    def _create_dir(self):
-        if self._args.output == "":
-            self._args.output = Path(__file__).resolve().parent
-
-        if not os.path.isdir(self._args.output):
-            self._parser.error(f"{self._args.output} is not a directory")
-
-        url = re.sub(r"^https?://", "", self._args.url)
-        self._args.output = os.path.join(self._args.output, url)
-
-        if not os.path.exists(self._args.output):
-            os.makedirs(self._args.output)
-
-    
-    
-    def _valid_certificate(self):
-        if not self._args.cert_p12:
-            return
-
-        if not os.path.exists(self._args.cert_p12):
-            self._parser.error(
-                f"Client certificate {self._args.cert_p12} does not exist"
-            )
-
-        if not os.path.isfile(self._args.cert_p12):
-            self._parser.error(
-                f"Client certificate {self._args.cert_p12} is not a file"
-            )
-
-        if not self._args.cert_p12_pwd:
-            self._parser.error("Client certificate password is required")
-
-    
-    
-    def _valid_headers(self) -> dict:
-        http_headers = {
-            "User-Agent": self._args.user_agent,
-            "Accept": "*/*",
-        }
-
-        if not self._args.header:
-            return http_headers
-
-        for header in self._args.header:
-            tokens: list[str] = header.split("=", maxsplit=1)
-
-            if len(tokens) != 2:
-                self._parser.error(
-                    f"HTTP header must have the form NAME=VALUE, got {header}"
-                )
-
-            name, value = tokens
-            http_headers[name.strip()] = value.strip()
-
-        return http_headers
-
-    
-    
-    def get_args(self) -> Arguments:
-        return Arguments(
-            cert_p12_pwd = self._args.cert_p12_pwd,
-            cert_p12     = self._args.cert_p12,
-            directory    = self._args.output,
-            proxy        = self._args.proxy,
-            url          = self._args.url,
-            jobs         = self._args.jobs,
-            retry        = self._args.retry,
-            timeout      = self._args.timeout,
-            http_headers = self._valid_headers(),
-            branches     = self._args.branches,
-            delay        = self._args.delay,
-        )
-
-
-
-
-class Display:
-
-    HTML: str = " [\033[34mHTML\033[0m] "
-
-    @staticmethod
-    def response(response: requests.Response):
-        code = response.status_code
-
-        if   code >= 400: x = f"\033[31m{code}\033[0m"
-        elif code >= 300: x = f"\033[33m{code}\033[0m"
-        elif code >= 200: x = f"\033[32m{code}\033[0m"
-        else:             x = f"{code}"
-
-        z = Display.HTML if is_html(response) else ' '
-
-        print(f"[{x}]{z}{response.url}", flush=True)
-
-
-    @staticmethod
-    def section(text: str):
-        print(f"[###] {text}", flush=True)
-
-
-    @staticmethod
-    def warning(text: str):
-        print(f"[\033[33m{'!!!'}\033[0m] {text}", flush=True)
-
-    
-    @staticmethod
-    def fatal(text: str):
-        print(f"[\033[31m{'ERR'}\033[0m] {text}", flush=True)
-        sys.exit(1)
-
-
-    @staticmethod
-    def success(text: str):
-        print(f"[\033[32m{'OK!'}\033[0m] {text}", flush=True)
-
-
-
-
-def is_html(response: requests.Response) -> bool:
-    return (
-        "Content-Type" in response.headers
-        and "text/html" in response.headers["Content-Type"]
-    )
-
-
-
-def is_safe_path(path: str) -> bool:
-    """ Prevents directory traversal attacks """
-    if path.startswith("/"):
-        return False
-
-    safe_path = os.path.expanduser("~")
-    try:
-        real = os.path.realpath(os.path.join(safe_path, path))
-        return os.path.commonpath((real, safe_path)) == safe_path
-
-    except ValueError:
-        return False
-
-
-
-def get_indexed_files(response: requests.Response) -> list:
-    html  = bs4.BeautifulSoup(response.text, "html.parser")
-    files = []
-
-    for link in html.find_all("a"):
-        url = urllib.parse.urlparse(link.get("href"))
-
-        if (
-            url.path
-            and is_safe_path(url.path)
-            and not url.scheme
-            and not url.netloc
-        ):
-            files.append(url.path)
-
-    return files
-
-
-
-def verify_response(response: requests.Response) -> tuple[bool, bool, str]:
-    Display.response(response)
-
-    if response.status_code >= 400:
-        return False, False, None
-
-    elif response.status_code >= 300 and "Location" in response.headers:
-        return False, True, (
-            f"Moved to {response.headers['Location']}. Code {response.status_code}"
-        )
-
-    elif (
-        "Content-Length" in response.headers
-        and response.headers["Content-Length"] == 0
-    ):
-        return False, True, "Responded with a zero-length body"
-
-    elif is_html(response):
-        return False, True, f"{response.url} responded with a HTML"
-
-    else:
-        return True, False, None
-
-
-
-def create_intermediate_dirs(path: str):
-    dirname, basename = os.path.split(path)
-
-    if dirname and not os.path.exists(dirname):
-        try:
-            os.makedirs(dirname)
-        except FileExistsError:
-            pass
-
-
-
-def get_referenced_sha1(obj_file):
-    """ Return all the referenced SHA1 in the given object file """
-    objs = []
-
-    if isinstance(obj_file, dulwich.objects.Commit):
-        objs.append(obj_file.tree.decode())
-        for parent in obj_file.parents:
-            objs.append(parent.decode())
-
-    elif isinstance(obj_file, dulwich.objects.Tree):
-        for item in obj_file.iteritems():
-            objs.append(item.sha.decode())
-
-    elif isinstance(obj_file, dulwich.objects.Tag):
-        objs.append(obj_file.object[1].decode())
-
-    elif isinstance(obj_file, dulwich.objects.Blob):
-        pass
-
-    else:
-        Display.warning(f"Unexpected object type: {obj_file}")
-
-    return objs
-
-
-
-
-class Worker(multiprocessing.Process):
-
-    def __init__(
-        self,
-        pending_tasks : multiprocessing.Queue,
-        tasks_done    : multiprocessing.Queue,
-        args          : Arguments,
-    ):
-        super().__init__()
-        self.daemon        : bool                  = True
-        self.pending_tasks : multiprocessing.Queue = pending_tasks
-        self.tasks_done    : multiprocessing.Queue = tasks_done
-        self.args          : Arguments             = args
-
-
-
-    def run(self):
-        self.init(self.args)
-
-        while True:
-            task = self.pending_tasks.get(block=True)
-
-            if task is None:  # end signal
-                return
-
-            try:
-                result = self.do_task(task, self.args)
-            except Exception:
-                Display.warning(f"Task {task} raised exception:")
-                traceback.print_exc()
-                result = []
-
-            if not isinstance(result, list):
-                Display.warning(
-                    f"do_task returned {type(result).__name__}, expected list"
-                )
-                result = []
-
-            self.tasks_done.put(result)
-
-    def init(self, args: Arguments):
-        raise NotImplementedError
-
-    def do_task(self, task, args: Arguments) -> list:
-        raise NotImplementedError
-
-
-
-
-class DownloadWorker(Worker):
-
-    def init(self, args: Arguments):
-        if hasattr(self, '_session'):
-            return
-
-        self._delay   : float            = args.delay
-        self._session : requests.Session = requests.Session()
-
-        self._session.verify = False
-        self._configure_session(args)
-
-
-
-    def _configure_session(self, args: Arguments):
-        self._session.headers.clear()
-        self._session.headers.update(args.http_headers)
-        self._session.headers.pop("Accept-Encoding", None)
-
-        if args.proxy:
-            self._session.proxies = {
-                "http":  args.proxy,
-                "https": args.proxy,
-            }
-
-        if not args.cert_p12:
-            self._session.mount(
-                args.url,
-                requests.adapters.HTTPAdapter(max_retries=args.retry),
-            )
-            return
-
-        self._session.mount(
-            args.url,
-            Pkcs12Adapter(
-                pkcs12_filename=args.cert_p12,
-                pkcs12_password=args.cert_p12_pwd,
-                max_retries=args.retry,
-            ),
-        )
-
-
-
-    def _request(self, url: str, **kwargs) -> requests.Response:
-        response = self._session.get(url, **kwargs)
-
-        if self._delay > 0:
-            time.sleep(self._delay)
-
-        return response
-
-
-
-    def do_task(self, filepath: str, args: Arguments) -> list:
-        if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
-            return []
-
-        with closing(
-            self._request(
-                f"{args.url}/{filepath}",
-                allow_redirects=False,
-                stream=True,
-                timeout=args.timeout,
-            )
-        ) as response:
-            valid, display, error_msg = verify_response(response)
-
-            if not valid:
-                if display:
-                    Display.warning(f"Invalid response from {response.url}: {error_msg}")
-                return []
-
-            abspath = os.path.abspath(os.path.join(args.directory, filepath))
-            create_intermediate_dirs(abspath)
-
-            with open(abspath, "wb") as f:
-                for chunk in response.iter_content(4096):
-                    f.write(chunk)
-
-            return []
-
-
-
-
-class RecursiveDownloadWorker(DownloadWorker):
-
-    def do_task(self, filepath: str, args: Arguments) -> list:
-        if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
-            return []
-
-        with closing(
-            self._request(
-                f"{args.url}/{filepath}",
-                allow_redirects=False,
-                stream=True,
-                timeout=args.timeout,
-            )
-        ) as response:
-            Display.response(response)
-
-            if (
-                response.status_code in (301, 302)
-                and "Location" in response.headers
-                and response.headers["Location"].endswith(filepath + "/")
-            ):
-                return [filepath + "/"]
-
-            if filepath.endswith("/"):  # directory index
-                if not is_html(response):
-                    Display.warning(f"Expected HTML index at {response.url}")
-                    return []
-
-                return [
-                    filepath + filename
-                    for filename in get_indexed_files(response)
-                ]
-
-            valid, display, error_msg = verify_response(response)
-
-            if not valid:
-                if display:
-                    Display.warning(f"Invalid response from {response.url}: {error_msg}")
-                return []
-
-            abspath = os.path.abspath(os.path.join(args.directory, filepath))
-            create_intermediate_dirs(abspath)
-
-            with open(abspath, "wb") as f:
-                for chunk in response.iter_content(4096):
-                    f.write(chunk)
-
-            return []
-
-
-
-
-class FindRefsWorker(DownloadWorker):
-
-    def do_task(self, filepath: str, args: Arguments) -> list:
-        response = self._request(
-            f"{args.url}/{filepath}",
-            allow_redirects=False,
-            timeout=args.timeout,
-        )
-
-        valid, display, error_msg = verify_response(response)
-
-        if not valid:
-            if display:
-                Display.warning(f"Invalid response from {response.url}: {error_msg}")
-            return []
-
-        abspath = os.path.abspath(os.path.join(args.directory, filepath))
-        create_intermediate_dirs(abspath)
-
-        with open(abspath, "w") as f:
-            f.write(response.text)
-
-        tasks = []
-
-        for ref in re.findall(
-            r"(refs(/[a-zA-Z0-9\-\.\_\*]+)+)", response.text
-        ):
-            ref = ref[0]
-            if not ref.endswith("*") and is_safe_path(ref):
-                tasks.append(f".git/{ref}")
-                tasks.append(f".git/logs/{ref}")
-
-        return tasks
-
-
-
-
-class FindObjectsWorker(DownloadWorker):
-
-    def do_task(self, obj, args: Arguments) -> list:
-        filepath = f".git/objects/{obj[:2]}/{obj[2:]}"
-
-        if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
-        else:
-            if not self._get_obj(filepath, args):
-                return []
-
-        try:
-            abspath  = os.path.abspath(os.path.join(args.directory, filepath))
-            obj_file = dulwich.objects.ShaFile.from_path(abspath)
-            return get_referenced_sha1(obj_file)
-        except Exception as e:
-            Display.warning(f"Error while parsing file {filepath}: {e}")
-            return []
-
-    def _get_obj(self, filepath: str, args: Arguments) -> bool:
-        response = self._request(
-            f"{args.url}/{filepath}",
-            allow_redirects=False,
-            timeout=args.timeout,
-        )
-
-        valid, display, error_msg = verify_response(response)
-
-        if not valid:
-            if display:
-                Display.warning(f"Invalid response from {response.url}: {error_msg}")
-            return False
-
-        abspath = os.path.abspath(os.path.join(args.directory, filepath))
-        create_intermediate_dirs(abspath)
-
-        with open(abspath, "wb") as f:
-            f.write(response.content)
-
-        return True
+        if content != modified_content:
+            Display.section("Sanitizing .git/config")
+            Display.warning(f"'{filepath}' file was altered")
+            write_file_atomic(filepath, modified_content)
 
 
 
@@ -1132,9 +510,10 @@ def main():
     try:
         git_looter = GitBleed()
         git_looter.execute()
-        sys.exit(0)
+
     except KeyboardInterrupt:
-        pass
+        sys.exit(130)
+    
     except Exception as e:
         Display.fatal(f'{e}')
 
