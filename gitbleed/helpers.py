@@ -14,10 +14,10 @@
 # limitations under the License.
 
 import bs4
-import dulwich
+import dulwich.objects
 import os
 import requests
-import urllib
+import urllib.parse
 from display import Display
 from check   import is_safe_path, is_html
 
@@ -101,3 +101,34 @@ def verify_response(response: requests.Response) -> tuple[bool, bool, str]:
 
     else:
         return True, False, None
+
+
+
+def write_file_atomic(path: str, content):
+    mode = "wb" if isinstance(content, (bytes, bytearray)) else "w"
+    tmp  = path + ".tmp"
+
+    try:
+        with open(tmp, mode) as f:
+            f.write(content)
+        
+        os.replace(tmp, path)
+
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
+
+def write_stream_atomic(path: str, chunks):
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            for chunk in chunks:
+                f.write(chunk)
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise

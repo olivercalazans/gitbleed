@@ -30,7 +30,7 @@ from check   import is_html
 from display import Display
 from helpers import *
 from parser  import Arguments, Parser
-from workers import RecursiveDownloadWorker, DownloadWorker, FindRefsWorker, FindObjectsWorker
+from workers import *
 
 
 
@@ -210,7 +210,12 @@ class GitBleed:
                 num_pending_tasks += 1
                 tasks_seen.add(task)
 
-        processes = [worker(pending_tasks, tasks_done, self._args) for _ in range(self._args.jobs)]
+        processes: list[Worker] = [
+            worker(
+                pending_tasks, tasks_done, self._args) 
+                for _ in range(self._args.jobs
+            )
+        ]
 
         for p in processes:
             p.start()
@@ -235,8 +240,13 @@ class GitBleed:
                     tasks_seen.add(task)
 
         if timed_out:
-            for p in processes: p.terminate()
-            for p in processes: p.join()
+            for p in processes:
+                p.join(timeout=5)
+
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+                    p.join()
             return
 
         for _ in range(self._args.jobs):
@@ -244,26 +254,6 @@ class GitBleed:
 
         for p in processes:
             p.join()
-
-
-
-    UNSAFE = r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
-
-    def _sanitize_file(self, filepath=".git/config"):
-        if not os.path.isfile(filepath):
-            Display.warning(".git/config not found")
-            return
-
-        Display.section("Sanitizing .git/config")
-
-        with open(filepath, 'r+') as f:
-            content = f.read()
-            modified_content = re.sub(self.UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
-
-            if content != modified_content:
-                Display.warning(f"'{filepath}' file was altered")
-                f.seek(0)
-                f.write(modified_content)
 
 
 
@@ -449,6 +439,7 @@ class GitBleed:
             index = dulwich.index.Index(index_path)
             for entry in index.iterobjects():
                 objs.add(entry[1].decode())
+
         except Exception:
             pass
 
@@ -497,6 +488,26 @@ class GitBleed:
         finally:
             os.chdir(cwd)
             Display.success(f"Repository saved to {self._args.directory}")
+
+
+
+    @staticmethod
+    def _sanitize_file(filepath=".git/config"):
+        if not os.path.isfile(filepath):
+            Display.warning(".git/config not found")
+            return
+    
+        UNSAFE = r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
+    
+        with open(filepath, "r") as f:
+            content = f.read()
+    
+        modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
+    
+        if content != modified_content:
+            Display.section("Sanitizing .git/config")
+            Display.warning(f"'{filepath}' file was altered")
+            write_file_atomic(filepath, modified_content, mode="w")
 
 
 

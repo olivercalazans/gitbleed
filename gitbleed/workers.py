@@ -82,9 +82,6 @@ class Worker(multiprocessing.Process):
 class DownloadWorker(Worker):
 
     def init(self, args: Arguments):
-        if hasattr(self, '_session'):
-            return
-
         self._delay   : float            = args.delay
         self._session : requests.Session = requests.Session()
 
@@ -154,10 +151,7 @@ class DownloadWorker(Worker):
 
             abspath = os.path.abspath(os.path.join(args.directory, filepath))
             create_intermediate_dirs(abspath)
-
-            with open(abspath, "wb") as f:
-                for chunk in response.iter_content(4096):
-                    f.write(chunk)
+            write_stream_atomic(abspath, response.iter_content(4096))
 
             return []
 
@@ -207,10 +201,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 
             abspath = os.path.abspath(os.path.join(args.directory, filepath))
             create_intermediate_dirs(abspath)
-
-            with open(abspath, "wb") as f:
-                for chunk in response.iter_content(4096):
-                    f.write(chunk)
+            write_stream_atomic(abspath, response.iter_content(4096))
 
             return []
 
@@ -235,9 +226,7 @@ class FindRefsWorker(DownloadWorker):
 
         abspath = os.path.abspath(os.path.join(args.directory, filepath))
         create_intermediate_dirs(abspath)
-
-        with open(abspath, "w") as f:
-            f.write(response.text)
+        write_file_atomic(abspath, response.text, mode="w")
 
         tasks = []
 
@@ -273,6 +262,8 @@ class FindObjectsWorker(DownloadWorker):
             Display.warning(f"Error while parsing file {filepath}: {e}")
             return []
 
+
+
     def _get_obj(self, filepath: str, args: Arguments) -> bool:
         response = self._request(
             f"{args.url}/{filepath}",
@@ -289,8 +280,6 @@ class FindObjectsWorker(DownloadWorker):
 
         abspath = os.path.abspath(os.path.join(args.directory, filepath))
         create_intermediate_dirs(abspath)
-
-        with open(abspath, "wb") as f:
-            f.write(response.content)
+        write_stream_atomic(abspath, response.iter_content(4096))
 
         return True
