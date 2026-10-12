@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitbleed"
-version = "1.0.3"
+version = "1.0.4"
 authors = [{ name="Oliver R. Calazans Jeronimo" },]
 description = "Tool to dump and reconstruct an entire Git repository from a publicly exposed .git folder on a web server."
 readme = "README.md"
