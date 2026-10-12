@@ -73,11 +73,11 @@ class Parser:
         )
         self._parser.add_argument(
             "--url", type=str, required=True,
-            help="URL of the git repository to dump"
+            help="(REQUIRED) URL of the git repository to dump"
         )
         self._parser.add_argument(
             "-o", "--output", type=str, required=True,
-            help="Directory where the repository will be saved",
+            help="(REQUIRED) Directory where the repository will be saved",
         )
         self._parser.add_argument("--proxy", help="Proxy URL, e.g. `socks5://127.0.0.1:9050`")
         self._parser.add_argument("--cert-p12", help="Client certificate in PKCS#12")

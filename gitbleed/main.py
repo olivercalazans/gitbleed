@@ -141,9 +141,16 @@ class GitBleed:
         if self._response.status_code >= 400:
             Display.fatal("Target unreachable. Dumping stopped")
 
-        elif self._response.status_code >= 300:
-            Display.warning(f"Redirection required to {self._response.headers['Location']}")
-            sys.exit(0)
+        if self._response.status_code == 304:
+            Display.fatal(
+                f"Unexpected status {self._response.status_code} " +
+                f"from {self._response.url} (no Location header). " +
+                "A proxy or CDN may be caching the request."
+            )
+
+        if self._response.status_code >= 300:
+            redirection = self._response.headers.get('Location', "Unknown location")
+            Display.fatal(f"Redirection required to {redirection}")
 
         if not valid:
             Display.fatal(f"Invalid response from {self._response.url}: {error_msg}")
@@ -498,7 +505,6 @@ def main():
     try:
         git_looter = GitBleed()
         git_looter.execute()
-        sys.exit(0)
     except KeyboardInterrupt:
         pass
     except Exception as e:
