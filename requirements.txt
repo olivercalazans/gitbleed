@@ -6,9 +6,8 @@ cryptography==50.0.2
 dulwich==1.2.17
 idna==3.20
 pycparser==3.11
-PySocks==1.7.1
 requests==2.34.2
 requests_pkcs12==1.27
-soupsieve==3.0.1
+soupsieve==3.0.3
 typing_extensions==4.16.0
 urllib3==2.8.0

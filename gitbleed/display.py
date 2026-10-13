@@ -56,3 +56,8 @@ class Display:
     @staticmethod
     def success(text: str):
         print(f"[\033[32m{'OK!'}\033[0m] {text}", flush=True)
+
+
+    @staticmethod
+    def passing(text: str):
+        print(f"[---] {text}", flush=True)
