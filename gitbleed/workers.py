@@ -13,12 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing
 import os
 import re
-import traceback
 import time
-from contextlib      import closing
+from contextlib import closing
+from multiprocessing import Queue, Process
 from requests_pkcs12 import Pkcs12Adapter
 
 import dulwich.objects
@@ -33,24 +32,25 @@ from helpers import (
     get_referenced_sha1, 
     verify_response, 
     write_file_atomic,
-    write_stream_atomic
+    write_stream_atomic,
+    describe_err
 )
 
 
 
-class Worker(multiprocessing.Process):
+class Worker(Process):
 
     def __init__(
         self,
-        pending_tasks : multiprocessing.Queue,
-        tasks_done    : multiprocessing.Queue,
+        pending_tasks : Queue,
+        tasks_done    : Queue,
         args          : Arguments,
     ):
         super().__init__()
-        self.daemon        : bool                  = True
-        self.pending_tasks : multiprocessing.Queue = pending_tasks
-        self.tasks_done    : multiprocessing.Queue = tasks_done
-        self.args          : Arguments             = args
+        self.daemon        : bool      = True
+        self.pending_tasks : Queue     = pending_tasks
+        self.tasks_done    : Queue     = tasks_done
+        self.args          : Arguments = args
 
 
 
@@ -65,25 +65,44 @@ class Worker(multiprocessing.Process):
 
             try:
                 result = self.do_task(task, self.args)
-            except Exception:
-                Display.warning(f"Task {task} raised exception:")
-                traceback.print_exc()
+            except (KeyboardInterrupt, SystemExit):
+                return
+            except Exception as e:
+                self.display_warn(f"{task}: {describe_err(e)}")
                 result = []
 
             if not isinstance(result, list):
-                Display.warning(
+                self.display_warn(
                     f"do_task returned {type(result).__name__}, expected list"
                 )
                 result = []
 
             self.tasks_done.put(result)
 
+    
+    
     def init(self, args: Arguments):
         raise NotImplementedError
 
     def do_task(self, task, args: Arguments) -> list:
         raise NotImplementedError
 
+
+
+    def display_pass(self, msg: str):
+        with self.args.lock:
+            Display.passing(msg)
+
+
+    def display_warn(self, msg: str):
+        with self.args.lock:
+            Display.warning(msg)
+
+
+    def display_hit(self, response: requests.Response):
+        with self.args.lock:
+            Display.response(response)
+    
 
 
 
@@ -137,7 +156,7 @@ class DownloadWorker(Worker):
 
     def do_task(self, filepath: str, args: Arguments) -> list:
         if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
+            self.display_pass(f"Already downloaded {args.url}/{filepath}")
             return []
 
         with closing(
@@ -148,11 +167,12 @@ class DownloadWorker(Worker):
                 timeout=args.timeout,
             )
         ) as response:
+            self.display_hit(response)
             valid, display, error_msg = verify_response(response)
 
             if not valid:
                 if display:
-                    Display.warning(f"Invalid response from {response.url}: {error_msg}")
+                    self.display_warn(f"Invalid response from {response.url}: {error_msg}")
                 return []
 
             abspath = os.path.abspath(os.path.join(args.directory, filepath))
@@ -168,7 +188,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 
     def do_task(self, filepath: str, args: Arguments) -> list:
         if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
+            self.display_pass(f"Already downloaded {args.url}/{filepath}")
             return []
 
         with closing(
@@ -179,7 +199,7 @@ class RecursiveDownloadWorker(DownloadWorker):
                 timeout=args.timeout,
             )
         ) as response:
-            Display.response(response)
+            self.display_hit(response)
 
             if (
                 response.status_code in (301, 302)
@@ -190,19 +210,19 @@ class RecursiveDownloadWorker(DownloadWorker):
 
             if filepath.endswith("/"):  # directory index
                 if not is_html(response):
-                    Display.warning(f"Expected HTML index at {response.url}")
+                    self.display_warn(f"Expected HTML index at {response.url}")
                     return []
 
                 return [
                     filepath + filename
                     for filename in get_indexed_files(response)
                 ]
-
+            
             valid, display, error_msg = verify_response(response)
 
             if not valid:
                 if display:
-                    Display.warning(f"Invalid response from {response.url}: {error_msg}")
+                    self.display_warn(f"Invalid response from {response.url}: {error_msg}")
                 return []
 
             abspath = os.path.abspath(os.path.join(args.directory, filepath))
@@ -223,11 +243,12 @@ class FindRefsWorker(DownloadWorker):
             timeout=args.timeout,
         )
 
+        self.display_hit(response)
         valid, display, error_msg = verify_response(response)
 
         if not valid:
             if display:
-                Display.warning(f"Invalid response from {response.url}: {error_msg}")
+                self.display_warn(f"Invalid response from {response.url}: {error_msg}")
             return []
 
         abspath = os.path.abspath(os.path.join(args.directory, filepath))
@@ -255,7 +276,7 @@ class FindObjectsWorker(DownloadWorker):
         filepath = f".git/objects/{obj[:2]}/{obj[2:]}"
 
         if os.path.isfile(os.path.join(args.directory, filepath)):
-            print(f"[---] Already downloaded {args.url}/{filepath}", flush=True)
+            self.display_pass(f"Already downloaded {args.url}/{filepath}")
         else:
             if not self._get_obj(filepath, args):
                 return []
@@ -265,7 +286,7 @@ class FindObjectsWorker(DownloadWorker):
             obj_file = dulwich.objects.ShaFile.from_path(abspath)
             return get_referenced_sha1(obj_file)
         except Exception as e:
-            Display.warning(f"Error while parsing file {filepath}: {e}")
+            self.display_warn(f"error parsing {filepath}: {describe_err(e)}")
             return []
 
 
@@ -277,11 +298,12 @@ class FindObjectsWorker(DownloadWorker):
             timeout=args.timeout,
         )
 
+        self.display_hit(response)
         valid, display, error_msg = verify_response(response)
 
         if not valid:
             if display:
-                Display.warning(f"Invalid response from {response.url}: {error_msg}")
+                self.display_warn(f"Invalid response from {response.url}: {error_msg}")
             return False
 
         abspath = os.path.abspath(os.path.join(args.directory, filepath))

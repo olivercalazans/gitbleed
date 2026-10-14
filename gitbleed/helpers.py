@@ -25,19 +25,6 @@ from check   import is_safe_path, is_html
 
 
 
-def normalize_url(url: str) -> str:    
-    url = url.rstrip("/")
-    if url.endswith("HEAD"):
-        url = url[:-4]
-    
-    url = url.rstrip("/")
-    if url.endswith(".git"):
-        url = url[:-4]
-    
-    return url.rstrip("/")
-
-
-
 def get_indexed_files(response: requests.Response) -> list:
     html  = bs4.BeautifulSoup(response.text, "html.parser")
     files = []
@@ -95,8 +82,6 @@ def get_referenced_sha1(obj_file):
 
 
 def verify_response(response: requests.Response) -> tuple[bool, bool, str]:
-    Display.response(response)
-
     if response.status_code >= 400:
         return False, False, None
 
@@ -150,3 +135,45 @@ def write_stream_atomic(path: str, chunks):
         if os.path.exists(tmp):
             os.remove(tmp)
         raise
+
+
+
+def describe_err(e: BaseException) -> str:
+    root = e
+
+    while root.__cause__ is not None:
+        root = root.__cause__
+    
+    name = type(root).__name__
+    
+    if isinstance(root, ConnectionRefusedError):
+        return "connection refused by server"
+    
+    if isinstance(root, ConnectionResetError):
+        return "connection closed by server"
+    
+    if isinstance(root, BrokenPipeError):
+        return "connection interrupted"
+    
+    if "ConnectTimeoutError" in name:
+        return "timeout while connecting"
+    
+    if "ReadTimeoutError" in name or "TimeoutError" in name:
+        return "timeout while reading response"
+    
+    if "ChunkedEncodingError" in name:
+        return "connection dropped mid-transfer"
+    
+    if "NewConnectionError" in name:
+        return "could not open connection"
+    
+    if "MaxRetryError" in name:
+        return "failed after multiple retries"
+    
+    if "SSLError" in name or "CertificateError" in name:
+        return "TLS/certificate error"
+    
+    if "ConnectionError" in name:
+        return "connection error"
+    
+    return f"{name}: {root}"

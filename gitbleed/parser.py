@@ -17,8 +17,9 @@ import argparse
 import urllib.parse
 import os
 import re
+import multiprocessing
+from multiprocessing.synchronize import Lock
 from dataclasses import dataclass
-from helpers     import normalize_url
 
 
 
@@ -35,6 +36,7 @@ class Arguments:
     http_headers : dict[str, str]
     branches     : list[str]
     delay        : float
+    lock         : Lock
 
 
 
@@ -51,7 +53,7 @@ class Parser:
     def parse(self):
         self._create_args()
         self._args = self._parser.parse_args()
-        self._args.url = normalize_url(self._args.url)
+        self._normalize_url()
         self._valid_jobs()
         self._valid_retry()
         self._valid_timeout()
@@ -117,7 +119,21 @@ class Parser:
             ),
         )
 
-    
+
+    def _normalize_url(self):
+        url: str = self._args.url
+        url = url.rstrip("/")
+
+        if url.endswith("HEAD"):
+            url = url[:-4]
+
+        url = url.rstrip("/")
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        self._args.url = url.rstrip("/")
+
+
     def _valid_jobs(self):
         if self._args.jobs < 1:
             self._parser.error(f"Invalid number of jobs, got {self._args.jobs}")
@@ -231,4 +247,5 @@ class Parser:
             http_headers = self._valid_headers(),
             branches     = self._args.branches,
             delay        = self._args.delay,
+            lock         = multiprocessing.Lock()
         )

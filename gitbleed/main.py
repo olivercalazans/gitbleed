@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing
 import os
 import queue
 import re
@@ -21,6 +20,7 @@ import subprocess
 import sys
 import time
 import urllib3
+from multiprocessing import Queue
 from requests_pkcs12 import Pkcs12Adapter
 
 import dulwich.index
@@ -35,7 +35,7 @@ from helpers import (
     verify_response,
     get_referenced_sha1,
     write_file_atomic,
-    normalize_url
+    describe_err
 )
 from workers import (
     Worker,
@@ -128,11 +128,12 @@ class GitBleed:
                 timeout=self._args.timeout,
             )
         except Exception as e:
-            Display.fatal(f"Unable to connect to {self._args.url}. Error: {e}")
+            Display.fatal(f"Unable to connect to {self._args.url}. {describe_err(e)}")
 
 
 
     def _valid_response(self):
+        Display.response(self._response)
         valid, _, error_msg = verify_response(self._response)
 
         if self._response.status_code >= 400:
@@ -193,8 +194,8 @@ class GitBleed:
             return
 
         tasks_seen        = set(tasks_done) if tasks_done else set()
-        pending_tasks     = multiprocessing.Queue()
-        tasks_done        = multiprocessing.Queue()
+        pending_tasks     = Queue()
+        tasks_done        = Queue()
         num_pending_tasks = 0
 
         for task in initial_tasks:
@@ -515,8 +516,8 @@ def main():
         sys.exit(130)
     
     except Exception as e:
-        Display.fatal(f'{e}')
-
+        Display.fatal(describe_err(e))
+        
 
 
 if __name__ == "__main__":
